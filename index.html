@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MANDELBROT // CRT v3</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap');
+
+  :root {
+    --red: #ff3b3b;
+    --green: #37ff7f;
+    --amber: #ffbf00;
+    --dark: #050506;
+    --darkred: #190000;
+    --border: #7a0a0a;
+    --blue: #4b6fff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--dark);
+    color: var(--red);
+    font-family: 'Share Tech Mono', monospace;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(0,0,0,0.12) 2px, rgba(0,0,0,0.12) 4px
+    );
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.65) 100%);
+    pointer-events: none;
+    z-index: 99;
+  }
+
+  #header {
+    height: 28px;
+    background: #120000;
+    border-bottom: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 12px;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+
+  #header .title {
+    font-family: 'VT323', monospace;
+    font-size: 20px;
+    color: var(--red);
+    letter-spacing: 4px;
+    text-shadow: 0 0 10px var(--red);
+  }
+
+  #header .subtitle { font-size: 10px; color: #7a0a0a; letter-spacing: 2px; }
+
+  .mode-badge {
+    font-family: 'VT323', monospace;
+    font-size: 15px;
+    padding: 0 7px;
+    border: 1px solid var(--amber);
+    color: var(--amber);
+    text-shadow: 0 0 6px var(--amber);
+    display: none;
+  }
+
+  #header .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse 1.5s ease-in-out infinite;
+    margin-left: auto;
+  }
+
+  @keyframes pulse {
+    0%,100% { opacity:1; box-shadow:0 0 6px var(--green); }
+    50% { opacity:0.3; box-shadow:0 0 2px var(--green); }
+  }
+
+  #main { display: flex; flex: 1; overflow: hidden; }
+
+  #canvas-wrap {
+    flex: 1;
+    position: relative;
+    border-right: 2px solid var(--border);
+  }
+
+  #c { display: block; width: 100%; height: 100%; cursor: crosshair; }
+
+  /* Orbit overlay canvas — sits on top of main canvas */
+  #orbit-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  #sel-box {
+    position: absolute;
+    border: 1px solid var(--green);
+    background: rgba(55,255,127,0.04);
+    pointer-events: none;
+    display: none;
+    box-shadow: 0 0 10px rgba(55,255,127,0.2);
+    z-index: 6;
+  }
+
+  #crosshair {
+    position: absolute;
+    pointer-events: none;
+    display: none;
+    z-index: 7;
+    width: 0; height: 0;
+  }
+  #crosshair::before, #crosshair::after {
+    content: '';
+    position: absolute;
+    background: rgba(55,255,127,0.35);
+  }
+  #crosshair::before { width:1px; height:24px; top:-12px; left:0; }
+  #crosshair::after  { width:24px; height:1px; left:-12px; top:0; }
+
+  #sidebar {
+    width: 235px;
+    flex-shrink: 0;
+    background: #0a0000;
+    display: flex;
+    flex-direction: column;
+    padding: 7px;
+    gap: 5px;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  #julia-panel {
+    border: 1px solid var(--border);
+    background: var(--darkred);
+    padding: 6px;
+    flex-shrink: 0;
+  }
+
+  .panel-title {
+    font-family: 'VT323', monospace;
+    font-size: 15px;
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+  }
+  .panel-title.red   { color: var(--red);   text-shadow: 0 0 6px var(--red); }
+  .panel-title.green { color: var(--green); text-shadow: 0 0 6px var(--green); }
+  .panel-title.amber { color: var(--amber); text-shadow: 0 0 6px var(--amber); }
+  .panel-title.blue  { color: var(--blue);  text-shadow: 0 0 6px var(--blue); }
+
+  #julia-canvas {
+    width: 100%;
+    aspect-ratio: 1;
+    display: block;
+    border: 1px solid #3a0a0a;
+    image-rendering: pixelated;
+  }
+
+  #julia-c-display {
+    font-size: 9px;
+    color: #7a7a2a;
+    margin-top: 3px;
+    letter-spacing: 0.5px;
+    word-break: break-all;
+  }
+
+  /* Orbit stats panel */
+  #orbit-panel {
+    border: 1px solid #1a1a4a;
+    background: #05050f;
+    padding: 7px;
+    flex-shrink: 0;
+  }
+
+  #orbit-stats { font-size: 10px; }
+
+  .ostat {
+    display: flex;
+    justify-content: space-between;
+    margin: 2px 0;
+    color: #6060ff;
+  }
+  .ostat .oval { color: var(--blue); }
+  .ostat .oval.escaped { color: var(--red); }
+  .ostat .oval.trapped { color: var(--green); }
+
+  .panel {
+    border: 1px solid var(--border);
+    background: var(--darkred);
+    padding: 7px;
+    flex-shrink: 0;
+  }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    margin: 2px 0;
+    color: #ff6060;
+  }
+  .stat-row .val { color: var(--green); font-size: 10px; }
+
+  .btn {
+    width: 100%;
+    padding: 5px 6px;
+    background: var(--darkred);
+    border: 1px solid var(--border);
+    color: var(--red);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    cursor: pointer;
+    text-align: left;
+    letter-spacing: 1px;
+    transition: all 0.1s;
+    flex-shrink: 0;
+  }
+  .btn:hover { background:#2a0000; border-color:var(--red); color:#fff; box-shadow:0 0 8px rgba(255,59,59,0.3); }
+  .btn.active { background:#002a00; border-color:var(--green); color:var(--green); box-shadow:0 0 8px rgba(55,255,127,0.3); }
+  .btn.blue-active { background:#05050f; border-color:var(--blue); color:var(--blue); box-shadow:0 0 8px rgba(75,111,255,0.3); }
+
+  .sep { height:1px; background:var(--border); margin:2px 0; flex-shrink:0; }
+
+  label.lbl { font-size:9px; color:#7a3a3a; letter-spacing:1px; display:block; margin-top:3px; }
+
+  input[type=range] {
+    width:100%; height:3px;
+    -webkit-appearance:none;
+    background:var(--border);
+    outline:none;
+    margin:3px 0;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance:none;
+    width:10px; height:10px;
+    border-radius:50%;
+    background:var(--red);
+    cursor:pointer;
+    box-shadow:0 0 4px var(--red);
+  }
+
+  select {
+    width:100%;
+    background:var(--darkred);
+    border:1px solid var(--border);
+    color:var(--red);
+    font-family:'Share Tech Mono',monospace;
+    font-size:10px;
+    padding:3px;
+    outline:none;
+  }
+  select option { background:#0a0000; }
+
+  .toggle-row {
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:10px; color:#ff6060; margin:3px 0;
+  }
+  .toggle {
+    width:28px; height:14px;
+    background:#2a0000;
+    border:1px solid var(--border);
+    border-radius:7px;
+    position:relative; cursor:pointer; transition:background 0.2s;
+  }
+  .toggle.on { background:#003a00; border-color:var(--green); }
+  .toggle.on.blue-toggle { background:#00003a; border-color:var(--blue); }
+  .toggle::after {
+    content:'';
+    position:absolute;
+    width:10px; height:10px;
+    border-radius:50%;
+    background:var(--border);
+    top:1px; left:1px;
+    transition:left 0.2s, background 0.2s;
+  }
+  .toggle.on::after { left:15px; background:var(--green); box-shadow:0 0 4px var(--green); }
+  .toggle.on.blue-toggle::after { background:var(--blue); box-shadow:0 0 4px var(--blue); }
+
+  #progress-bar-wrap { height:3px; background:#0a0000; border-top:1px solid var(--border); flex-shrink:0; }
+  #progress-bar { height:100%; background:var(--red); width:0%; box-shadow:0 0 6px var(--red); transition:width 0.05s; }
+
+  #footer {
+    height:20px; background:#000; border-top:1px solid var(--border);
+    display:flex; align-items:center; padding:0 10px; gap:12px; flex-shrink:0; z-index:10;
+  }
+  .fkey { font-size:10px; color:#444; letter-spacing:1px; }
+  .fkey span { color:var(--amber); }
+  #coords { margin-left:auto; font-size:10px; color:#555; }
+  #coords .cv { color:var(--green); }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div class="title">MANDELBROT</div>
+  <div class="subtitle">FRACTAL EXPLORER v3 // ORBIT TRACER</div>
+  <div class="mode-badge" id="badge-julia">JULIA</div>
+  <div class="mode-badge" id="badge-orbit" style="border-color:var(--blue);color:var(--blue);text-shadow:0 0 6px var(--blue);">ORBIT</div>
+  <div style="font-size:11px;color:#7a7a2a;letter-spacing:1px;">ZOOM <span id="zoom-display" style="color:var(--amber);text-shadow:0 0 5px var(--amber);">1.0×</span></div>
+  <div class="status-dot"></div>
+</div>
+
+<div id="main">
+  <div id="canvas-wrap">
+    <canvas id="c"></canvas>
+    <canvas id="orbit-canvas"></canvas>
+    <div id="sel-box"></div>
+    <div id="crosshair"></div>
+  </div>
+
+  <div id="sidebar">
+
+    <div id="julia-panel">
+      <div class="panel-title green">JULIA PREVIEW</div>
+      <canvas id="julia-canvas" width="200" height="200"></canvas>
+      <div id="julia-c-display">hover to preview julia set</div>
+    </div>
+
+    <!-- Orbit tracer panel -->
+    <div id="orbit-panel">
+      <div class="panel-title blue">ORBIT TRACER</div>
+      <div id="orbit-stats">
+        <div class="ostat"><span>STATUS</span><span class="oval" id="o-status">—</span></div>
+        <div class="ostat"><span>ITERATIONS</span><span class="oval" id="o-iter">—</span></div>
+        <div class="ostat"><span>ESCAPE |Z|</span><span class="oval" id="o-escape">—</span></div>
+        <div class="ostat"><span>FINAL |Z|²</span><span class="oval" id="o-mag">—</span></div>
+        <div class="ostat"><span>C</span><span class="oval" id="o-c">—</span></div>
+      </div>
+      <div class="toggle-row" style="margin-top:6px;">
+        <span style="color:#6060ff;">ANIMATE ORBIT</span>
+        <div class="toggle on blue-toggle" id="anim-toggle"></div>
+      </div>
+      <label class="lbl" style="color:#3a3a7a;">ORBIT SPEED</label>
+      <input type="range" id="speed-slider" min="1" max="20" value="8" step="1"
+        style="background:#1a1a4a;">
+    </div>
+
+    <div class="panel">
+      <div class="panel-title amber">RENDER</div>
+      <div class="stat-row"><span>ITER</span><span class="val" id="s-iter">—</span></div>
+      <div class="stat-row"><span>TIME</span><span class="val" id="s-time">—</span></div>
+      <div class="stat-row"><span>STATUS</span><span class="val" id="s-status">IDLE</span></div>
+      <div class="toggle-row">
+        <span>SMOOTH COLOR</span>
+        <div class="toggle on" id="smooth-toggle"></div>
+      </div>
+      <div class="toggle-row">
+        <span>JULIA PREVIEW</span>
+        <div class="toggle on" id="preview-toggle"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title amber">PALETTE</div>
+      <select id="palette-sel">
+        <option value="red_crt">RED CRT</option>
+        <option value="amber">AMBER CRT</option>
+        <option value="hybrid" selected>HYBRID</option>
+        <option value="fire">FIRE</option>
+        <option value="ice">ICE</option>
+        <option value="ultra">ULTRA</option>
+        <option value="psychedelic">PSYCHEDELIC</option>
+        <option value="grayscale">GRAYSCALE</option>
+      </select>
+      <label class="lbl">MAX ITERATIONS</label>
+      <input type="range" id="iter-slider" min="64" max="2000" value="256" step="8">
+      <div class="stat-row"><span></span><span class="val" id="iter-val">256</span></div>
+    </div>
+
+    <div class="sep"></div>
+
+    <button class="btn" id="btn-render">▶ RENDER (R)</button>
+    <button class="btn" id="btn-reset">↺ RESET (ESC)</button>
+    <button class="btn" id="btn-julia">◈ JULIA MODE (J)</button>
+    <button class="btn" id="btn-orbit">⬡ ORBIT MODE (O)</button>
+    <button class="btn" id="btn-clear-orbit">✕ CLEAR ORBIT (C)</button>
+    <button class="btn" id="btn-save">⬇ SAVE PNG (S)</button>
+
+    <div class="sep"></div>
+
+    <div class="panel">
+      <div class="panel-title amber">PRESETS</div>
+      <button class="btn" onclick="loadPreset('seahorse')">SEAHORSE VALLEY</button>
+      <button class="btn" onclick="loadPreset('elephant')">ELEPHANT VALLEY</button>
+      <button class="btn" onclick="loadPreset('spiral')">DOUBLE SPIRAL</button>
+      <button class="btn" onclick="loadPreset('tendrils')">TENDRILS</button>
+      <button class="btn" onclick="loadPreset('mini')">MINI BROT</button>
+      <button class="btn" onclick="loadPreset('lightning')">LIGHTNING</button>
+    </div>
+
+  </div>
+</div>
+
+<div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+
+<div id="footer">
+  <div class="fkey"><span>DRAG</span> zoom box</div>
+  <div class="fkey"><span>SHIFT+DRAG</span> pan</div>
+  <div class="fkey"><span>SCROLL</span> zoom</div>
+  <div class="fkey"><span>O</span> orbit</div>
+  <div class="fkey"><span>J</span> julia</div>
+  <div class="fkey"><span>S</span> save</div>
+  <div id="coords">Z = <span class="cv" id="coord-c">—</span></div>
+</div>
+
+<script>
+const canvas      = document.getElementById('c');
+const ctx         = canvas.getContext('2d');
+const orbitCanvas = document.getElementById('orbit-canvas');
+const oCtx        = orbitCanvas.getContext('2d');
+const jCanvas     = document.getElementById('julia-canvas');
+const jCtx        = jCanvas.getContext('2d');
+const selBox      = document.getElementById('sel-box');
+const crosshair   = document.getElementById('crosshair');
+const wrap        = document.getElementById('canvas-wrap');
+
+let state = {
+  xmin:-2.5, xmax:1.0, ymin:-1.25, ymax:1.25,
+  maxIter:256, palette:'hybrid', smooth:true,
+  juliaMode:false, juliaPreview:true,
+  juliaC:{ r:-0.7269, i:0.1889 },
+  orbitMode:false,
+  orbitAnimate:true,
+  orbitSpeed:8,
+  zoom:1,
+  rendering:false, renderCancel:false,
+};
+
+const PRESETS = {
+  seahorse:  {xmin:-0.7462,xmax:-0.7430,ymin:0.1095, ymax:0.1127 },
+  elephant:  {xmin:0.2549, xmax:0.2581, ymin:-0.0006,ymax:0.0026 },
+  spiral:    {xmin:-0.7269,xmax:-0.7249,ymin:0.1889, ymax:0.1909 },
+  tendrils:  {xmin:-1.786, xmax:-1.781, ymin:-0.002, ymax:0.003  },
+  mini:      {xmin:-1.768, xmax:-1.764, ymin:-0.002, ymax:0.002  },
+  lightning: {xmin:-0.5015,xmax:-0.4985,ymin:0.5625, ymax:0.5655 },
+};
+
+// ── Palettes ──────────────────────────────────────────────────────────────
+function getColor(name, t) {
+  if (name==='red_crt')    { const v=Math.pow(t,0.45); return [255*v|0,15*v|0,15*v|0]; }
+  if (name==='amber')      { const v=Math.pow(t,0.45); return [255*v|0,175*v|0,0]; }
+  if (name==='hybrid') {
+    if (t<0.5) { const v=Math.pow(t*2,0.6); return [255*v|0,60*v|0,0]; }
+    else       { const v=Math.pow((t-0.5)*2,0.6); return [20*v|0,255*v|0,100*v|0]; }
+  }
+  if (name==='fire')  { return [Math.min(255,255*Math.pow(t*1.5,0.7))|0, Math.min(255,255*Math.pow(Math.max(0,t*2-0.5),1.2))|0, 0]; }
+  if (name==='ice')   { const v=Math.pow(t,0.5); return [20*v|0,120*v|0,255*v|0]; }
+  if (name==='ultra') { const c=t*Math.PI*6; return [(128+127*Math.sin(c))|0,(128+127*Math.sin(c+2.094))|0,(128+127*Math.sin(c+4.189))|0]; }
+  if (name==='psychedelic') { const c=t*Math.PI*10; return [(128+127*Math.sin(c*1.3))|0,(128+127*Math.sin(c*0.7+1))|0,(128+127*Math.cos(c*1.9+2))|0]; }
+  if (name==='grayscale') { const v=Math.pow(t,0.5)*255|0; return [v,v,v]; }
+  return [255,0,0];
+}
+
+// ── Core iteration ────────────────────────────────────────────────────────
+function iterateMandelbrot(cr,ci,maxIter,smooth) {
+  let zr=0,zi=0,zr2=0,zi2=0;
+  for (let i=0;i<maxIter;i++) {
+    zi=2*zr*zi+ci; zr=zr2-zi2+cr; zr2=zr*zr; zi2=zi*zi;
+    if (zr2+zi2>4) {
+      if (smooth) {
+        const l=Math.log(zr2+zi2)/2;
+        const nu=Math.log(Math.max(l,1e-10)/Math.LN2)/Math.LN2;
+        return Math.max(0, i+1-nu);
+      }
+      return i;
+    }
+  }
+  return maxIter;
+}
+
+function iterateJulia(zr,zi,cr,ci,maxIter,smooth) {
+  let zr2=zr*zr,zi2=zi*zi;
+  for (let i=0;i<maxIter;i++) {
+    zi=2*zr*zi+ci; zr=zr2-zi2+cr; zr2=zr*zr; zi2=zi*zi;
+    if (zr2+zi2>4) {
+      if (smooth) {
+        const l=Math.log(zr2+zi2)/2;
+        const nu=Math.log(Math.max(l,1e-10)/Math.LN2)/Math.LN2;
+        return Math.max(0, i+1-nu);
+      }
+      return i;
+    }
+  }
+  return maxIter;
+}
+
+// ── Compute full orbit path ───────────────────────────────────────────────
+function computeOrbit(cr, ci, maxIter, juliaMode, juliaC) {
+  const points = [];
+  let zr, zi;
+  let c_r, c_i;
+
+  if (juliaMode) {
+    zr = cr; zi = ci;
+    c_r = juliaC.r; c_i = juliaC.i;
+  } else {
+    zr = 0; zi = 0;
+    c_r = cr; c_i = ci;
+  }
+
+  points.push({ zr, zi });
+
+  for (let i = 0; i < maxIter; i++) {
+    const nzi = 2 * zr * zi + c_i;
+    const nzr = zr * zr - zi * zi + c_r;
+    zr = nzr; zi = nzi;
+    points.push({ zr, zi });
+    if (zr*zr + zi*zi > 256) break;
+  }
+
+  return points;
+}
+
+// ── Coordinate helpers ───────────────────────────────────────────────────
+function toScreen(zr, zi) {
+  const W = canvas.width, H = canvas.height;
+  const x = (zr - state.xmin) / (state.xmax - state.xmin) * W;
+  const y = (zi - state.ymin) / (state.ymax - state.ymin) * H;
+  return { x, y };
+}
+
+function toComplex(px, py) {
+  const W = canvas.width, H = canvas.height;
+  return {
+    r: state.xmin + (px / W) * (state.xmax - state.xmin),
+    i: state.ymin + (py / H) * (state.ymax - state.ymin),
+  };
+}
+
+// ── Orbit animation ───────────────────────────────────────────────────────
+let orbitAnim = null;
+let currentOrbit = null;
+let orbitFrame = 0;
+
+function clearOrbit() {
+  if (orbitAnim) { cancelAnimationFrame(orbitAnim); orbitAnim = null; }
+  oCtx.clearRect(0, 0, orbitCanvas.width, orbitCanvas.height);
+  currentOrbit = null;
+  orbitFrame = 0;
+  document.getElementById('o-status').textContent = '—';
+  document.getElementById('o-iter').textContent = '—';
+  document.getElementById('o-escape').textContent = '—';
+  document.getElementById('o-mag').textContent = '—';
+  document.getElementById('o-c').textContent = '—';
+}
+
+function drawOrbitFull(points, escaped) {
+  const W = orbitCanvas.width, H = orbitCanvas.height;
+  oCtx.clearRect(0, 0, W, H);
+  if (points.length < 2) return;
+
+  // Draw trail
+  for (let i = 1; i < points.length; i++) {
+    const a = toScreen(points[i-1].zr, points[i-1].zi);
+    const b = toScreen(points[i].zr, points[i].zi);
+    const t = i / points.length;
+
+    oCtx.beginPath();
+    oCtx.moveTo(a.x, a.y);
+    oCtx.lineTo(b.x, b.y);
+    const alpha = Math.max(0.1, t);
+    if (escaped) {
+      oCtx.strokeStyle = `rgba(255,${60+t*195|0},${60+t*195|0},${alpha})`;
+    } else {
+      oCtx.strokeStyle = `rgba(${55+t*200|0},255,${127+t*128|0},${alpha})`;
+    }
+    oCtx.lineWidth = 1;
+    oCtx.stroke();
+  }
+
+  // Draw dots
+  for (let i = 0; i < points.length; i++) {
+    const p = toScreen(points[i].zr, points[i].zi);
+    const t = i / points.length;
+    oCtx.beginPath();
+    oCtx.arc(p.x, p.y, i === 0 ? 5 : 2.5, 0, Math.PI * 2);
+    if (i === 0) {
+      // Starting point — bright white
+      oCtx.fillStyle = '#ffffff';
+      oCtx.shadowColor = '#ffffff';
+      oCtx.shadowBlur = 8;
+    } else if (i === points.length - 1) {
+      // End point
+      oCtx.fillStyle = escaped ? '#ff3b3b' : '#37ff7f';
+      oCtx.shadowColor = escaped ? '#ff3b3b' : '#37ff7f';
+      oCtx.shadowBlur = 10;
+    } else {
+      oCtx.fillStyle = escaped
+        ? `rgba(255,${100+t*155|0},${100+t*155|0},0.8)`
+        : `rgba(${55+t*200|0},255,${127+t*128|0},0.8)`;
+      oCtx.shadowBlur = 0;
+    }
+    oCtx.fill();
+    oCtx.shadowBlur = 0;
+  }
+}
+
+function animateOrbit(points, escaped) {
+  if (orbitAnim) { cancelAnimationFrame(orbitAnim); orbitAnim = null; }
+  orbitFrame = 0;
+  const speed = state.orbitSpeed;
+
+  function step() {
+    const W = orbitCanvas.width, H = orbitCanvas.height;
+    oCtx.clearRect(0, 0, W, H);
+
+    const visible = Math.min(orbitFrame, points.length);
+
+    // Draw lines up to current frame
+    for (let i = 1; i < visible; i++) {
+      const a = toScreen(points[i-1].zr, points[i-1].zi);
+      const b = toScreen(points[i].zr, points[i].zi);
+      const t = i / points.length;
+      oCtx.beginPath();
+      oCtx.moveTo(a.x, a.y);
+      oCtx.lineTo(b.x, b.y);
+      const alpha = Math.max(0.15, t * 0.9);
+      oCtx.strokeStyle = escaped
+        ? `rgba(255,${80+t*175|0},${80+t*175|0},${alpha})`
+        : `rgba(${55+t*200|0},255,${100+t*155|0},${alpha})`;
+      oCtx.lineWidth = 1.2;
+      oCtx.stroke();
+    }
+
+    // Draw dots up to current frame
+    for (let i = 0; i < visible; i++) {
+      const p = toScreen(points[i].zr, points[i].zi);
+      const t = i / points.length;
+      oCtx.beginPath();
+      const isFirst = i === 0;
+      const isLast  = i === visible - 1;
+      const r = isFirst ? 5 : isLast ? 4 : 2;
+      oCtx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      if (isFirst) {
+        oCtx.fillStyle = '#ffffff';
+        oCtx.shadowColor = '#ffffff';
+        oCtx.shadowBlur = 10;
+      } else if (isLast) {
+        // Current position — pulsing
+        const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.01);
+        oCtx.fillStyle = escaped ? `rgba(255,59,59,${0.6+0.4*pulse})` : `rgba(55,255,127,${0.6+0.4*pulse})`;
+        oCtx.shadowColor = escaped ? '#ff3b3b' : '#37ff7f';
+        oCtx.shadowBlur = 8 + 6 * pulse;
+      } else {
+        oCtx.fillStyle = escaped
+          ? `rgba(255,${100+t*155|0},${100+t*155|0},0.75)`
+          : `rgba(${55+t*200|0},255,${100+t*155|0},0.75)`;
+        oCtx.shadowBlur = 0;
+      }
+      oCtx.fill();
+      oCtx.shadowBlur = 0;
+    }
+
+    orbitFrame += speed;
+    if (orbitFrame < points.length) {
+      orbitAnim = requestAnimationFrame(step);
+    } else {
+      // Draw complete orbit
+      drawOrbitFull(points, escaped);
+    }
+  }
+
+  orbitAnim = requestAnimationFrame(step);
+}
+
+function traceOrbit(px, py) {
+  const c = toComplex(px, py);
+  const points = computeOrbit(c.r, c.i, state.maxIter, state.juliaMode, state.juliaC);
+  const escaped = points.length > 1 && (points[points.length-1].zr**2 + points[points.length-1].zi**2) > 4;
+  const lastPt = points[points.length - 1];
+  const mag2 = lastPt.zr**2 + lastPt.zi**2;
+
+  currentOrbit = { points, escaped };
+
+  // Update orbit stats
+  const statusEl = document.getElementById('o-status');
+  statusEl.textContent = escaped ? 'ESCAPED' : 'TRAPPED';
+  statusEl.className = 'oval ' + (escaped ? 'escaped' : 'trapped');
+  document.getElementById('o-iter').textContent = points.length - 1;
+  document.getElementById('o-escape').textContent = escaped ? Math.sqrt(mag2).toFixed(3) : 'N/A';
+  document.getElementById('o-mag').textContent = mag2.toFixed(4);
+  document.getElementById('o-c').textContent = `${c.r.toFixed(5)},${c.i.toFixed(5)}i`;
+
+  if (state.orbitAnimate) {
+    animateOrbit(points, escaped);
+  } else {
+    drawOrbitFull(points, escaped);
+  }
+}
+
+// ── Main render ───────────────────────────────────────────────────────────
+let renderTimer = null;
+
+async function render() {
+  if (state.rendering) { state.renderCancel = true; await new Promise(r=>setTimeout(r,60)); }
+  state.rendering = true; state.renderCancel = false;
+  document.getElementById('s-status').textContent = 'RENDERING';
+  document.getElementById('s-iter').textContent = state.maxIter;
+
+  const W=canvas.width, H=canvas.height;
+  const maxIter=state.maxIter, smooth=state.smooth, palette=state.palette;
+  const imgData=ctx.createImageData(W,H); const data=imgData.data;
+  const xRange=state.xmax-state.xmin, yRange=state.ymax-state.ymin;
+  const cr=state.juliaC.r, ci2=state.juliaC.i, juliaMode=state.juliaMode;
+  const t0=performance.now();
+  const CHUNK=6;
+
+  for (let row=0;row<H;row+=CHUNK) {
+    if (state.renderCancel) break;
+    for (let y=row;y<Math.min(row+CHUNK,H);y++) {
+      const im=state.ymin+(y/H)*yRange;
+      for (let x=0;x<W;x++) {
+        const re=state.xmin+(x/W)*xRange;
+        const iter=juliaMode
+          ? iterateJulia(re,im,cr,ci2,maxIter,smooth)
+          : iterateMandelbrot(re,im,maxIter,smooth);
+        let rgb;
+        if (iter>=maxIter) { rgb=[0,0,0]; }
+        else { const t=(iter%maxIter)/maxIter; rgb=getColor(palette,t); }
+        const idx=(y*W+x)*4;
+        data[idx]=rgb[0]; data[idx+1]=rgb[1]; data[idx+2]=rgb[2]; data[idx+3]=255;
+      }
+    }
+    ctx.putImageData(imgData,0,0);
+    document.getElementById('progress-bar').style.width=((row/H)*100)+'%';
+    await new Promise(r=>setTimeout(r,0));
+  }
+
+  ctx.putImageData(imgData,0,0);
+  document.getElementById('progress-bar').style.width='100%';
+  const elapsed=((performance.now()-t0)/1000).toFixed(2);
+  document.getElementById('s-time').textContent=elapsed+'s';
+  document.getElementById('s-status').textContent='DONE';
+  setTimeout(()=>{ document.getElementById('progress-bar').style.width='0%'; },500);
+  state.rendering=false;
+
+  // Redraw orbit if one exists
+  if (currentOrbit) drawOrbitFull(currentOrbit.points, currentOrbit.escaped);
+}
+
+// ── Julia preview ─────────────────────────────────────────────────────────
+let juliaPreviewTimer=null, juliaRendering=false;
+
+async function renderJuliaPreview(cr,ci) {
+  if (!state.juliaPreview || juliaRendering) return;
+  juliaRendering=true;
+  const W=jCanvas.width,H=jCanvas.height;
+  const maxIter=Math.min(state.maxIter,128);
+  const imgData=jCtx.createImageData(W,H); const data=imgData.data;
+  const xmin=-1.8,xmax=1.8,ymin=-1.8,ymax=1.8;
+  const xRange=xmax-xmin, yRange=ymax-ymin;
+  for (let y=0;y<H;y++) {
+    const im=ymin+(y/H)*yRange;
+    for (let x=0;x<W;x++) {
+      const re=xmin+(x/W)*xRange;
+      const iter=iterateJulia(re,im,cr,ci,maxIter,state.smooth);
+      let rgb;
+      if (iter>=maxIter) { rgb=[0,0,0]; }
+      else { const t=(iter%maxIter)/maxIter; rgb=getColor(state.palette,t); }
+      const idx=(y*W+x)*4;
+      data[idx]=rgb[0]; data[idx+1]=rgb[1]; data[idx+2]=rgb[2]; data[idx+3]=255;
+    }
+    if (y%8===0) await new Promise(r=>setTimeout(r,0));
+  }
+  jCtx.putImageData(imgData,0,0);
+  juliaRendering=false;
+}
+
+// ── Mouse ─────────────────────────────────────────────────────────────────
+let drag={active:false,x0:0,y0:0};
+let pan={active:false,x0:0,y0:0,xminStart:0,yminStart:0,xmaxStart:0,ymaxStart:0};
+
+canvas.addEventListener('mousedown', e => {
+  // Middle mouse OR shift+left = pan
+  if (e.button===1 || (e.button===0 && e.shiftKey)) {
+    e.preventDefault();
+    pan.active=true;
+    pan.x0=e.offsetX; pan.y0=e.offsetY;
+    pan.xminStart=state.xmin; pan.ymaxStart=state.ymax;
+    pan.xmaxStart=state.xmax; pan.yminStart=state.ymin;
+    canvas.style.cursor='grabbing';
+    return;
+  }
+  if (e.button!==0) return;
+  if (state.orbitMode) { traceOrbit(e.offsetX, e.offsetY); return; }
+  drag.active=true; drag.x0=e.offsetX; drag.y0=e.offsetY;
+  selBox.style.display='block';
+  selBox.style.left=drag.x0+'px'; selBox.style.top=drag.y0+'px';
+  selBox.style.width='0px'; selBox.style.height='0px';
+});
+
+canvas.addEventListener('mousemove', e => {
+  const W=canvas.width, H=canvas.height;
+  const xRange=state.xmax-state.xmin, yRange=state.ymax-state.ymin;
+  const re=state.xmin+(e.offsetX/W)*xRange;
+  const im=state.ymin+(e.offsetY/H)*yRange;
+  document.getElementById('coord-c').textContent=
+    re.toFixed(8)+(im>=0?' + ':' - ')+Math.abs(im).toFixed(8)+'i';
+
+  crosshair.style.display='block';
+  crosshair.style.left=e.offsetX+'px'; crosshair.style.top=e.offsetY+'px';
+
+  // Pan
+  if (pan.active) {
+    const dx = (e.offsetX - pan.x0) / W * (pan.xmaxStart - pan.xminStart);
+    const dy = (e.offsetY - pan.y0) / H * (pan.ymaxStart - pan.yminStart);
+    state.xmin = pan.xminStart - dx;
+    state.xmax = pan.xmaxStart - dx;
+    state.ymin = pan.yminStart - dy;
+    state.ymax = pan.ymaxStart - dy;
+    updateStats();
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(render, 120);
+    return;
+  }
+
+  if (state.juliaPreview && !state.juliaMode) {
+    clearTimeout(juliaPreviewTimer);
+    juliaPreviewTimer=setTimeout(()=>{
+      state.juliaC.r=re; state.juliaC.i=im;
+      document.getElementById('julia-c-display').textContent=
+        `c = ${re.toFixed(6)} + ${im.toFixed(6)}i`;
+      renderJuliaPreview(re,im);
+    },30);
+  }
+
+  if (drag.active) {
+    const x1=Math.min(drag.x0,e.offsetX), y1=Math.min(drag.y0,e.offsetY);
+    const w=Math.abs(e.offsetX-drag.x0), h=Math.abs(e.offsetY-drag.y0);
+    selBox.style.left=x1+'px'; selBox.style.top=y1+'px';
+    selBox.style.width=w+'px'; selBox.style.height=h+'px';
+  }
+});
+
+canvas.addEventListener('mouseleave', ()=>{
+  crosshair.style.display='none';
+  if (pan.active) {
+    pan.active=false;
+    canvas.style.cursor=state.orbitMode?'pointer':'crosshair';
+    render();
+  }
+});
+
+canvas.addEventListener('mouseup', e => {
+  // End pan
+  if (pan.active) {
+    pan.active=false;
+    canvas.style.cursor=state.orbitMode?'pointer':'crosshair';
+    clearTimeout(renderTimer);
+    render();
+    return;
+  }
+  if (!drag.active) return;
+  drag.active=false; selBox.style.display='none';
+  const W=canvas.width, H=canvas.height;
+  const px0=Math.min(drag.x0,e.offsetX), px1=Math.max(drag.x0,e.offsetX);
+  const py0=Math.min(drag.y0,e.offsetY), py1=Math.max(drag.y0,e.offsetY);
+  if (px1-px0<5||py1-py0<5) return;
+  const xRange=state.xmax-state.xmin, yRange=state.ymax-state.ymin;
+  const oldRange=xRange;
+  const nxmin=state.xmin+(px0/W)*xRange;
+  const nxmax=state.xmin+(px1/W)*xRange;
+  const nymin=state.ymin+(py0/H)*yRange;
+  const nymax=state.ymin+(py1/H)*yRange;
+  state.xmin=nxmin; state.xmax=nxmax;
+  state.ymin=nymin; state.ymax=nymax;
+  state.zoom*=oldRange/(state.xmax-state.xmin);
+  updateStats(); render();
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor=e.deltaY>0?1.3:0.77;
+  const W=canvas.width, H=canvas.height;
+  const mx=e.offsetX/W, my=e.offsetY/H;
+  const xRange=state.xmax-state.xmin, yRange=state.ymax-state.ymin;
+  const cx=state.xmin+mx*xRange, cy=state.ymin+my*yRange;
+  const nxr=xRange*factor, nyr=yRange*factor;
+  state.xmin=cx-mx*nxr; state.xmax=state.xmin+nxr;
+  state.ymin=cy-my*nyr; state.ymax=state.ymin+nyr;
+  state.zoom/=factor;
+  updateStats();
+  clearTimeout(renderTimer);
+  renderTimer=setTimeout(render,80);
+},{passive:false});
+
+canvas.addEventListener('contextmenu',e=>{
+  e.preventDefault();
+  if (!state.juliaMode) return;
+  const c=toComplex(e.offsetX,e.offsetY);
+  state.juliaC.r=c.r; state.juliaC.i=c.i;
+  render();
+});
+
+// ── Keyboard ──────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e=>{
+  if (e.key==='r'||e.key==='R') render();
+  if (e.key==='Escape') loadPreset(null);
+  if (e.key==='j'||e.key==='J') toggleJulia();
+  if (e.key==='o'||e.key==='O') toggleOrbitMode();
+  if (e.key==='c'||e.key==='C') clearOrbit();
+  if (e.key==='s'||e.key==='S') savePNG();
+});
+
+// ── Mode toggles ──────────────────────────────────────────────────────────
+function toggleJulia() {
+  state.juliaMode=!state.juliaMode;
+  const btn=document.getElementById('btn-julia');
+  btn.classList.toggle('active',state.juliaMode);
+  btn.textContent=state.juliaMode?'◈ MANDELBROT (J)':'◈ JULIA MODE (J)';
+  document.getElementById('badge-julia').style.display=state.juliaMode?'block':'none';
+  if (state.juliaMode) { state.xmin=-1.8;state.xmax=1.8;state.ymin=-1.8;state.ymax=1.8; }
+  else { state.xmin=-2.5;state.xmax=1.0;state.ymin=-1.25;state.ymax=1.25; }
+  state.zoom=1; clearOrbit(); updateStats(); render();
+}
+
+function toggleOrbitMode() {
+  state.orbitMode=!state.orbitMode;
+  const btn=document.getElementById('btn-orbit');
+  btn.classList.toggle('blue-active',state.orbitMode);
+  btn.textContent=state.orbitMode?'⬡ EXIT ORBIT (O)':'⬡ ORBIT MODE (O)';
+  document.getElementById('badge-orbit').style.display=state.orbitMode?'block':'none';
+  canvas.style.cursor=state.orbitMode?'pointer':'crosshair';
+  if (!state.orbitMode) clearOrbit();
+}
+
+function savePNG() {
+  // Composite: fractal + orbit
+  const composite=document.createElement('canvas');
+  composite.width=canvas.width; composite.height=canvas.height;
+  const cCtx=composite.getContext('2d');
+  cCtx.drawImage(canvas,0,0);
+  cCtx.drawImage(orbitCanvas,0,0);
+  const link=document.createElement('a');
+  const mode=state.juliaMode?'julia':'mandelbrot';
+  link.download=`${mode}_${state.palette}_${Date.now()}.png`;
+  link.href=composite.toDataURL('image/png');
+  link.click();
+  document.getElementById('s-status').textContent='SAVED';
+  setTimeout(()=>document.getElementById('s-status').textContent='DONE',1500);
+}
+
+function loadPreset(name) {
+  if (!name) {
+    state.xmin=-2.5;state.xmax=1.0;state.ymin=-1.25;state.ymax=1.25;state.zoom=1;
+    state.juliaMode=false;
+    document.getElementById('btn-julia').classList.remove('active');
+    document.getElementById('btn-julia').textContent='◈ JULIA MODE (J)';
+    document.getElementById('badge-julia').style.display='none';
+  } else {
+    const p=PRESETS[name];
+    state.xmin=p.xmin;state.xmax=p.xmax;state.ymin=p.ymin;state.ymax=p.ymax;
+    state.zoom=3.5/(p.xmax-p.xmin);
+  }
+  clearOrbit(); updateStats(); render();
+}
+
+function updateStats() {
+  const z = state.zoom;
+  const zStr = z >= 1000 ? (z/1000).toFixed(1)+'K×' : z >= 1 ? z.toFixed(1)+'×' : z.toFixed(3)+'×';
+  const el = document.getElementById('zoom-display');
+  if (el) el.textContent = zStr;
+}
+
+// ── Controls ──────────────────────────────────────────────────────────────
+document.getElementById('btn-render').addEventListener('click',render);
+document.getElementById('btn-reset').addEventListener('click',()=>loadPreset(null));
+document.getElementById('btn-julia').addEventListener('click',toggleJulia);
+document.getElementById('btn-orbit').addEventListener('click',toggleOrbitMode);
+document.getElementById('btn-clear-orbit').addEventListener('click',clearOrbit);
+document.getElementById('btn-save').addEventListener('click',savePNG);
+
+document.getElementById('palette-sel').addEventListener('change',e=>{
+  state.palette=e.target.value; render();
+});
+document.getElementById('iter-slider').addEventListener('input',e=>{
+  state.maxIter=parseInt(e.target.value);
+  document.getElementById('iter-val').textContent=state.maxIter;
+});
+document.getElementById('iter-slider').addEventListener('change',render);
+
+document.getElementById('smooth-toggle').addEventListener('click',function(){
+  state.smooth=!state.smooth; this.classList.toggle('on',state.smooth); render();
+});
+document.getElementById('preview-toggle').addEventListener('click',function(){
+  state.juliaPreview=!state.juliaPreview; this.classList.toggle('on',state.juliaPreview);
+  if (!state.juliaPreview) { jCtx.clearRect(0,0,jCanvas.width,jCanvas.height); document.getElementById('julia-c-display').textContent='preview disabled'; }
+});
+document.getElementById('anim-toggle').addEventListener('click',function(){
+  state.orbitAnimate=!state.orbitAnimate; this.classList.toggle('on',state.orbitAnimate);
+});
+document.getElementById('speed-slider').addEventListener('input',e=>{
+  state.orbitSpeed=parseInt(e.target.value);
+});
+
+// ── Resize ────────────────────────────────────────────────────────────────
+function resize() {
+  const r=wrap.getBoundingClientRect();
+  canvas.width=orbitCanvas.width=Math.floor(r.width);
+  canvas.height=orbitCanvas.height=Math.floor(r.height);
+}
+
+const ro=new ResizeObserver(()=>{ resize(); render(); });
+ro.observe(wrap);
+resize();
+
+renderJuliaPreview(state.juliaC.r,state.juliaC.i);
+document.getElementById('julia-c-display').textContent=
+  `c = ${state.juliaC.r.toFixed(6)} + ${state.juliaC.i.toFixed(6)}i`;
+render();
+</script>
+</body>
+</html>
